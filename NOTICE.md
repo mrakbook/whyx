@@ -1,0 +1,28 @@
+# Notice
+
+This project includes original work © 2025 Boris Karaoglanov and Contributors.
+
+Third-party dependencies (if any) remain the property of their respective owners and are licensed under their own terms.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
