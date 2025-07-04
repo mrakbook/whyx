@@ -1,0 +1,85 @@
+############################
+# Python bytecode / cache
+############################
+__pycache__/
+*.py[cod]
+*$py.class
+
+############################
+# Virtual environments
+############################
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+.venv-tests/
+
+############################
+# Build / distribution artifacts
+############################
+build/
+dist/
+*.egg
+*.whl
+*.spec
+.packaging-venv/
+
+############################
+# whyx-specific generated files
+############################
+.whyx_index.json
+whyx_trace.json
+*.trace.json
+watch.json
+trace.json
+
+############################
+# Test / coverage / tooling
+############################
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.pytest_cache/
+.pyre/
+.pytype/
+
+############################
+# OS / editor / IDE junk
+############################
+
+# macOS
+.DS_Store
+.AppleDouble
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# JetBrains
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+
+############################
+# Logs / temp
+############################
+*.log
+*.tmp
+*.bak
+*.orig
+
+############################
+# Local config overrides
+############################
+*.local.*
+.env
+.env.*
