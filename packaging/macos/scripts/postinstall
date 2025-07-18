@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+BIN="/usr/local/bin/whyx"
+if [[ -f "$BIN" ]]; then
+	chmod 0755 "$BIN"
+	echo "whyx installed to ${BIN}"
+fi
+exit 0
