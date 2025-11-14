@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION="$(awk -F '\"' '/__version__/ {print $2; exit}' src/__init__.py || echo 0.0.0)"
+          VERSION="$(awk -F '\"' '/__version__/ {print $2; exit}' src/__init__.py || echo 0.0.1)"
 
           TAGS="$(git ls-remote --tags --refs origin "v${VERSION}-beta*" | awk '{print $2}' | sed 's#refs/tags/##' || true)"
 

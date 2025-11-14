@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.0)"
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.1)"
           REL="release/${VERSION}"
           echo "Switching to ${REL}…"
           git fetch origin "${REL}" --depth=1
@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.0)"
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.1)"
           REL="release/${VERSION}"
           git fetch origin "${REL}" --depth=1
           git checkout -B "${REL}" "origin/${REL}"
@@ -107,7 +107,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.0)"
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.1)"
 
           REF_NAME="${GITHUB_REF_NAME:-}"
           if [[ -z "${REF_NAME}" || ! "${REF_NAME}" =~ ^release/ ]]; then
