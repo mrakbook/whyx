@@ -1,0 +1,106 @@
+name: CI (PR → dev)
+
+on:
+  pull_request:
+    branches: [dev, beta, main]
+    types: [opened, reopened, ready_for_review, synchronize]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "tests/**"
+      - "packaging/**"
+      - "!**/*.md"
+      - "!**/*.mdx"
+      - "!**/*.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run linter (scripts/lint.py)
+        run: python scripts/lint.py lint
+
+  tests:
+    name: Tests
+    needs: [lint]
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run tests (scripts/test.py)
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python scripts/test.py
+
+  smoke-build:
+    name: Smoke build (pkg-dev)
+    needs: [tests]
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request' &&
+        (
+          github.event.pull_request.base.ref == 'dev'  ||
+          github.event.pull_request.base.ref == 'beta' ||
+          github.event.pull_request.base.ref == 'main' ||
+          github.event.pull_request.head.ref == 'dev'
+        )
+      )
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build dev package
+        run: make pkg-dev
+
+      - name: Smoke check CLI
+        run: ./dist/whyx -V || ./dist/whyx --version
+
+      - name: Detect arch
+        id: meta
+        shell: bash
+        run: echo "arch=$(uname -m)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload dev artifacts (${{ steps.meta.outputs.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-artifacts-${{ steps.meta.outputs.arch }}
+          retention-days: 7
+          path: |
+            build/artifacts/**
+            build/pkg/**/*.pkg
+            dist/**

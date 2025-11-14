@@ -1,0 +1,121 @@
+name: Beta Release (from dev merges)
+
+on:
+  pull_request:
+    branches: [beta]
+    types: [closed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-dev-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build-beta:
+    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev' && github.event.pull_request.base.ref == 'beta' }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout base branch (beta) after merge
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Resolve beta HEAD commit
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "beta_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compute version and next beta tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(awk -F '\"' '/__version__/ {print $2; exit}' src/__init__.py || echo 0.0.1)"
+
+          TAGS="$(git ls-remote --tags --refs origin "v${VERSION}-beta*" | awk '{print $2}' | sed 's#refs/tags/##' || true)"
+
+          max=-1
+          for t in $TAGS; do
+            if [[ "$t" == "v${VERSION}-beta" ]]; then
+              [[ $max -lt 0 ]] && max=0
+            elif [[ "$t" =~ ^v${VERSION}-beta\.([0-9]+)$ ]]; then
+              n="${BASH_REMATCH[1]}"
+              if (( n > max )); then max=$n; fi
+            fi
+          done
+
+          if (( max < 0 )); then
+            PREID="beta"
+            NEXT_TAG="v${VERSION}-beta"
+          else
+            NEXT_NUM=$((max + 1))
+            PREID="beta.${NEXT_NUM}"
+            NEXT_TAG="v${VERSION}-beta.${NEXT_NUM}"
+          fi
+
+          EFFECTIVE="${VERSION}-${PREID}"
+          RELEASE_NAME="Beta v${EFFECTIVE}"
+
+          # Expose values as step outputs (so they can be used in later expressions)
+          {
+            echo "version=${VERSION}"
+            echo "preid=${PREID}"
+            echo "beta_tag=${NEXT_TAG}"
+            echo "effective=${EFFECTIVE}"
+            echo "release_name=${RELEASE_NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build beta package
+        env:
+          PREID: ${{ steps.meta.outputs.preid }}
+        run: bash packaging/macos/build_pkg.sh
+
+      - name: Smoke check built CLI
+        run: ./dist/whyx -V || ./dist/whyx --version
+
+      - name: Upload beta artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta-artifacts
+          retention-days: 10
+          path: |
+            build/artifacts/**
+            build/pkg/**/*.pkg
+            dist/**
+
+      - name: Publish GitHub prerelease (incremental beta)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.beta_tag }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: true
+          generate_release_notes: true
+          target_commitish: ${{ steps.resolve.outputs.beta_sha }}
+          files: |
+            build/artifacts/**
+            build/pkg/**/*.pkg
+            dist/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update moving 'beta' tag to this beta commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f beta "${{ steps.resolve.outputs.beta_sha }}"
+          git push -f origin "refs/tags/beta"

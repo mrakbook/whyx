@@ -13,7 +13,7 @@ VERSION="$(
 import re, pathlib
 p = pathlib.Path("src/__init__.py").read_text(encoding="utf-8")
 m = re.search(r'__version__\s*=\s*"([^"]+)"', p)
-print(m.group(1) if m else "0.0.0")
+print(m.group(1) if m else "0.0.1")
 PY
 )"
 

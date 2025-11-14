@@ -1,0 +1,74 @@
+name: Promote main → release/*
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cut-stable:
+    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev' && github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the exact merge commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Compute version from src/__init__.py
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || true)"
+          if [[ -z "${VERSION}" ]]; then
+            echo "::error::Could not resolve __version__ from src/__init__.py"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "rel_branch=release/${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release/<version> branch (if missing)
+        env:
+          REL_BRANCH: ${{ steps.meta.outputs.rel_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --heads origin "${REL_BRANCH}" | grep -q "${REL_BRANCH}"; then
+            echo "Branch ${REL_BRANCH} already exists; skipping."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git switch -c "${REL_BRANCH}"
+            git push origin "${REL_BRANCH}"
+            echo "Pushed branch ${REL_BRANCH}"
+          fi
+
+      - name: Create lightweight tag release/<version> (if missing)
+        env:
+          REL_BRANCH: ${{ steps.meta.outputs.rel_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${REL_BRANCH}"
+          if git ls-remote --tags --refs origin "${TAG}" | grep -q "${TAG}$"; then
+            echo "Tag ${TAG} already exists; skipping."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "${TAG}"
+            git push origin "refs/tags/${TAG}"
+            echo "Pushed tag ${TAG}"
+          fi
+
+      - name: Done
+        run: echo "Stable cut complete → branch + tag created. 'Stable Release' workflow will build & publish."
