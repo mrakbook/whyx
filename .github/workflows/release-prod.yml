@@ -1,0 +1,163 @@
+name: Stable Release
+
+on:
+  push:
+    branches:
+      - "release/*"
+    tags:
+      - "release/*"
+  workflow_run:
+    workflows: ["Promote main → release/*"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prod-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15-intel, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: (workflow_run) Switch to release/<version>
+        if: ${{ github.event_name == 'workflow_run' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.0)"
+          REL="release/${VERSION}"
+          echo "Switching to ${REL}…"
+          git fetch origin "${REL}" --depth=1
+          git checkout -B "${REL}" "origin/${REL}"
+
+      - name: Ensure release ref contains main (soft check)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1 || true
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "OK: release ref contains main"
+          else
+            echo "::warning::release/* is not based on 'main'. Proceeding anyway."
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build prod package
+        run: make pkg-prod
+
+      - name: Smoke check built CLI
+        run: ./dist/whyx -V || ./dist/whyx --version
+
+      - name: Upload prod artifacts (${{ matrix.os }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-artifacts-${{ matrix.os }}
+          retention-days: 30
+          path: |
+            build/artifacts/**
+            build/pkg/**/*.pkg
+            dist/**
+
+  publish:
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: (workflow_run) Switch to release/<version>
+        if: ${{ github.event_name == 'workflow_run' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.0)"
+          REL="release/${VERSION}"
+          git fetch origin "${REL}" --depth=1
+          git checkout -B "${REL}" "origin/${REL}"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compute version and tag (from ref or workflow_run)
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(awk -F '\"' '/__version__/ { print $2; exit }' src/__init__.py || echo 0.0.0)"
+
+          REF_NAME="${GITHUB_REF_NAME:-}"
+          if [[ -z "${REF_NAME}" || ! "${REF_NAME}" =~ ^release/ ]]; then
+            REF_NAME="release/${VERSION}"
+          fi
+
+          if [[ "${REF_NAME}" =~ ^release/([0-9]+(\.[0-9]+){1,2})$ ]]; then
+            REF_VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Ref name must be release/X.Y or release/X.Y.Z (got '${REF_NAME}')"
+            exit 1
+          fi
+
+          if [[ "${REF_VERSION}" != "${VERSION}" ]]; then
+            echo "::warning::Ref version (${REF_VERSION}) != src/__init__.py (${VERSION}). Using ref version for the release name."
+            VERSION="${REF_VERSION}"
+          fi
+
+          echo "VERSION=${VERSION}"     >> "$GITHUB_ENV"
+          echo "STABLE_TAG=${REF_NAME}" >> "$GITHUB_ENV"
+
+      - name: Download all prod artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prod-artifacts-*
+          merge-multiple: true
+
+      - name: Recompute combined SHA256SUMS (both arches)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/artifacts
+          : > build/artifacts/SHA256SUMS
+          find build/artifacts -name "whyx_*_darwin_*.tar.gz" -type f -print0 | xargs -0 shasum -a 256 >> build/artifacts/SHA256SUMS
+          echo "SHA256SUMS:"
+          cat build/artifacts/SHA256SUMS
+
+      - name: Publish/Update GitHub Release (stable)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.STABLE_TAG }}
+          name: Release v${{ env.VERSION }}
+          prerelease: false
+          generate_release_notes: true
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          fail_on_unmatched_files: false
+          files: |
+            build/artifacts/**
+            build/pkg/**/*.pkg
+            dist/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class whyx < Formula
+class Whyx < Formula
   desc "Code navigation and dynamic tracing CLI"
   homepage "https://github.com/mrakbook/whyx"
 0.0.7  # placeholder; update_formula.sh will bump this
